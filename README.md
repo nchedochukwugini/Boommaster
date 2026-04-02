@@ -73,4 +73,4 @@ python3 bot.py
 ## Contest
 Built for the Audiera Agent-Native Challenge.
 Create -> Participate -> Earn
-#AudieraAI #BEAT #BinanceAI
+#AudieraAI #BEAT #BinanceAI #Audiera #AgentEconomy #AIMusic
