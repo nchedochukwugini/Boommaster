@@ -12,7 +12,7 @@ Boom Master thinks like a music executive. It scouts emotional themes, commissio
 https://ai.audiera.fi/music/3440
 
 ## Full Loop
-1. /create - AI suggests emotional narrative themes
+1. /create - AI suggests themes
 2. Pick a style (Hip-Hop, Soul, R&B, Pop...)
 3. Pick a mood (Heartbreak, Euphoric, Nostalgic...)
 4. Boom Master generates lyrics via Audiera Lyrics Skill
