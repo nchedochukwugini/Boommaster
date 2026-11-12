@@ -363,7 +363,7 @@
         <div id="profileNotice" class="notice" role="status"></div>
         <div class="profile-meta"><div class="profile-stat"><strong id="profileCreationCount">0</strong><span>Creations</span></div><div class="profile-stat"><strong id="profilePlaybookCount">0</strong><span>Playbooks</span></div></div>
       </article>
-      <article class="card profile-storage"><span class="profile-storage-mark" aria-hidden="true">⌂</span><div><span class="profile-eyebrow">WALLET-LINKED PROFILE</span><p id="profileStats">Connect your Nimiq wallet to access your profile, creations, and playbooks from this account.</p><div class="profile-account-card"><span class="profile-storage-mark" aria-hidden="true">N</span><span id="profileWalletAddress" class="profile-account-address">Nimiq wallet not connected</span></div><button id="disconnectWalletButton" type="button">Disconnect wallet</button></div></article>
+      <article class="card profile-storage"><span class="profile-storage-mark" aria-hidden="true">⌂</span><div><span class="profile-eyebrow">WALLET-LINKED PROFILE</span><div class="profile-account-card"><span class="profile-storage-mark" aria-hidden="true">N</span><span id="profileWalletAddress" class="profile-account-address">Nimiq wallet not connected</span></div><button id="disconnectWalletButton" type="button">Disconnect wallet</button></div></article>
     </section>
 
     <section id="screen1" class="screen active" aria-labelledby="title1">
@@ -703,7 +703,6 @@
         const data = await api(`/api/workspace?userId=${encodeURIComponent(userId)}`);
         workspaceCreations = data.creations || [];
         $('displayName').value = data.profile?.display_name || 'Music Creator';
-        $('profileStats').textContent = `${workspaceCreations.length} saved creation${workspaceCreations.length === 1 ? '' : 's'}. This profile is stored on this browser/device.`;
         if (!workspaceCreations.length) { root.innerHTML = '<p class="empty-copy">Your first track will appear here.</p>'; return; }
         workspaceCreations.forEach((item) => {
           const card = document.createElement('article'); card.className = 'panel-item';
@@ -762,7 +761,6 @@
       $('removeProfilePhoto').classList.toggle('hidden', !profilePhoto);
       $('profileCreationCount').textContent = workspaceCreations.length;
       $('profilePlaybookCount').textContent = profilePlaybooks.length;
-      $('profileStats').textContent = `${workspaceCreations.length} saved creation${workspaceCreations.length === 1 ? '' : 's'} and ${profilePlaybooks.length} playbook${profilePlaybooks.length === 1 ? '' : 's'}. Your profile and saved work are tied to this Nimiq wallet. Profile photos stay in this browser.`;
       $('profileWalletAddress').textContent = state.walletAddress ? formatWalletAddress(state.walletAddress) : 'Nimiq wallet not connected';
     }
 
