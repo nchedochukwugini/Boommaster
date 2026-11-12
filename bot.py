@@ -34,15 +34,37 @@ ARTISTS = {
     "Jazz":       ("Kira", "osipvytdvxuzci9pn2nz1"),
 }
 
-WALLET = "0x88c773d7c09d7889bd5e47dc588a390fa05989da"
+FIFA_ANTHEMS = [
+    {"title": "Waka Waka (This Time for Africa)", "artist": "Shakira", "year": 2010,
+     "themes": "celebration, Africa, unity, rhythm, warrior spirit, energy"},
+    {"title": "The Cup of Life", "artist": "Ricky Martin", "year": 1998,
+     "themes": "victory, passion, Latin fire, competition, glory"},
+    {"title": "Boom", "artist": "Anastacia", "year": 2002,
+     "themes": "explosion of joy, unstoppable force, global party"},
+    {"title": "Wavin Flag", "artist": "K'naan", "year": 2010,
+     "themes": "freedom, resilience, hope, rising up, national pride"},
+    {"title": "La La La", "artist": "Shakira ft. Carlinhos Brown", "year": 2014,
+     "themes": "Brasil, color, carnival, togetherness, dancing"},
+    {"title": "Live It Up", "artist": "Nicky Jam ft. Will Smith & Era Istrefi", "year": 2018,
+     "themes": "living in the moment, global unity, party, stadium energy"},
+    {"title": "We Are One (Ole Ola)", "artist": "Pitbull ft. Jennifer Lopez", "year": 2014,
+     "themes": "unity, one world, celebration, tropical energy"},
+    {"title": "Colors", "artist": "Jason Derulo", "year": 2018,
+     "themes": "diversity, boldness, color of nations, pride"},
+    {"title": "Dar Um Jeito (We Will Find A Way)", "artist": "Carlos Santana", "year": 2014,
+     "themes": "finding a way, determination, Brazilian soul, guitar passion"},
+    {"title": "Hayya Hayya (Better Together)", "artist": "Trinidad Cardona", "year": 2022,
+     "themes": "togetherness, Middle East, hope, new world, better future"},
+]
 
 logging.basicConfig(level=logging.INFO)
 
-user_themes  = {}
-user_styles  = {}
-user_moods   = {}
-user_lyrics  = {}
-user_waiting = {}
+user_themes   = {}
+user_styles   = {}
+user_moods    = {}
+user_lyrics   = {}
+user_waiting  = {}
+user_anthem_waiting = {}
 
 def get_credits():
     try:
@@ -56,7 +78,6 @@ def get_credits():
         return None
 
 def generate_lyrics(inspiration):
-    """Use official Audiera lyrics skill API."""
     try:
         r = requests.post(
             "https://ai.audiera.fi/api/skills/lyrics",
@@ -74,11 +95,10 @@ def generate_lyrics(inspiration):
         return None, str(e)
 
 def ask_openrouter(prompt):
-    """Use OpenRouter for scout report, pitch and theme suggestions."""
     models = [
-        "openrouter/free",
         "meta-llama/llama-3.3-70b-instruct:free",
-        "meta-llama/llama-4-maverick:free"
+        "meta-llama/llama-4-maverick:free",
+        "openrouter/free",
     ]
     for model in models:
         try:
@@ -158,6 +178,7 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "I find stories worth singing, commission real songs on Audiera,\n"
         "and pitch them to the world.\n\n"
         "*/create* — Start making a song\n"
+        "*/anthem* — Generate your FIFA World Cup 2026 football anthem\n"
         "*/credits* — Check your Audiera balance",
         parse_mode="Markdown"
     )
@@ -178,6 +199,163 @@ async def credits_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"Status: {status}\n\n"
         f"_Each generation costs 2 credits and produces 2 songs._\n"
         f"{'Top up at: https://ai.audiera.fi' if c < 2 else ''}",
+        parse_mode="Markdown"
+    )
+
+async def anthem(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+
+    await update.message.reply_text(
+        "⚽ *World Cup 2026 Anthem Generator*\n\n"
+        "🔍 Scouting FIFA World Cup anthem history...",
+        parse_mode="Markdown"
+    )
+
+    # Build scout context from FIFA anthems
+    anthem_context = "\n".join([
+        f"- {a['year']}: \"{a['title']}\" by {a['artist']} — themes: {a['themes']}"
+        for a in FIFA_ANTHEMS
+    ])
+
+    # Ask OpenRouter to analyze and compose inspiration
+    scout_prompt = (
+        f"You are Boom Master, an AI music A&R agent.\n\n"
+        f"Here are famous FIFA World Cup anthem songs across the years:\n"
+        f"{anthem_context}\n\n"
+        f"Analyze what makes these anthems timeless — their emotional core, "
+        f"lyrical patterns, energy, and universal themes.\n\n"
+        f"Then write a SCOUT REPORT (3 sentences) explaining what a perfect "
+        f"FIFA World Cup 2026 anthem needs to feel like.\n\n"
+        f"Use exactly this header:\n## SCOUT REPORT"
+    )
+
+    try:
+        scout_text = ask_openrouter(scout_prompt)
+        scout_report = ""
+        if "## SCOUT REPORT" in scout_text:
+            scout_report = scout_text[scout_text.index("## SCOUT REPORT") + len("## SCOUT REPORT"):].strip()
+        else:
+            scout_report = scout_text.strip()
+    except Exception:
+        scout_report = "Drawing from decades of World Cup anthems — unity, triumph, and the thunder of a billion hearts beating as one."
+
+    await ctx.bot.send_message(
+        uid,
+        f"📡 *Scout Report*\n\n{scout_report}\n\n"
+        f"✍️ Composing your anthem lyrics...",
+        parse_mode="Markdown"
+    )
+
+    # Build inspiration string for Audiera lyrics API
+    inspiration = (
+        f"FIFA World Cup 2026 football anthem — "
+        f"inspired by the energy of Waka Waka, the unity of Wavin Flag, "
+        f"the fire of The Cup of Life, and the joy of Hayya Hayya. "
+        f"Themes: global unity, triumph, passion, the beautiful game, "
+        f"nations rising together, stadium roar, World Cup glory. "
+        f"Style: anthemic, powerful, universal, singalong chorus."
+    )
+
+    lyrics, err = generate_lyrics(inspiration)
+
+    if err or not lyrics:
+        await ctx.bot.send_message(uid, f"⚠️ Lyrics generation failed: {err}")
+        return
+
+    # Store anthem data
+    user_lyrics[uid] = {
+        "lyrics": lyrics,
+        "style": "Pop",
+        "theme": "FIFA World Cup 2026 Football Anthem",
+        "mood": "Triumphant",
+        "pitch": (
+            "A World Cup anthem for the ages — built on the DNA of Waka Waka and Wavin Flag, "
+            "forged for 2026. This track carries the roar of every nation, "
+            "the pulse of the beautiful game, and a chorus the whole world will sing."
+        )
+    }
+
+    kb = [
+        [InlineKeyboardButton("✅ Use these lyrics", callback_data="anthem:use")],
+        [InlineKeyboardButton("✏️ Edit lyrics",      callback_data="anthem:edit")],
+    ]
+
+    await ctx.bot.send_message(
+        uid,
+        f"⚽ *Your World Cup 2026 Anthem Lyrics*\n\n"
+        f"{lyrics}\n\n"
+        f"Happy with these? You can edit or go straight to production.",
+        reply_markup=InlineKeyboardMarkup(kb),
+        parse_mode="Markdown"
+    )
+
+async def anthem_decision(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid    = query.from_user.id
+    action = query.data[len("anthem:"):]
+
+    if action == "edit":
+        user_anthem_waiting[uid] = True
+        await query.edit_message_text(
+            "✏️ Send me your edited anthem lyrics now as a message.",
+            parse_mode="Markdown"
+        )
+        return
+
+    await query.edit_message_text("⏳ Sending to Audiera... producing your anthem.")
+    await send_anthem_to_audiera(uid, ctx)
+
+async def receive_edited_anthem(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    if not user_anthem_waiting.get(uid):
+        return
+    user_anthem_waiting[uid] = False
+    edited = update.message.text.strip()
+    if uid in user_lyrics:
+        user_lyrics[uid]["lyrics"] = edited
+    await update.message.reply_text("✅ Anthem lyrics saved! Sending to Audiera now...")
+    await send_anthem_to_audiera(uid, ctx)
+
+async def send_anthem_to_audiera(uid, ctx):
+    data   = user_lyrics.get(uid, {})
+    lyrics = data.get("lyrics", "")
+    style  = data.get("style", "Pop")
+    theme  = data.get("theme", "FIFA World Cup 2026 Football Anthem")
+    mood   = data.get("mood", "Triumphant")
+    pitch  = data.get("pitch", "")
+
+    task_id, artist_name, err = submit_to_audiera(lyrics, style, theme, mood)
+    if err:
+        await ctx.bot.send_message(uid, f"⚠️ {err}")
+        return
+
+    await ctx.bot.send_message(uid, "⏳ Producing your anthem... (up to 10 min)")
+
+    song_url = poll_audiera(task_id)
+
+    if not song_url:
+        await ctx.bot.send_message(
+            uid,
+            f"⚠️ Track is taking longer than expected.\n"
+            f"Check manually: https://ai.audiera.fi/music/{task_id}"
+        )
+        return
+
+    remaining = get_credits()
+    credit_line = (
+        f"\n💳 Credits remaining: *{remaining}*"
+        if remaining is not None else ""
+    )
+
+    await ctx.bot.send_message(
+        uid,
+        f"⚽ *Your World Cup 2026 Anthem is live!*\n\n"
+        f"🎧 {song_url}\n\n"
+        f"🏷️ *Style:* {style} · *Mood:* {mood} · *Artist:* {artist_name}\n\n"
+        f"📋 *A&R Pitch*\n{pitch}\n\n"
+        f"{credit_line}\n\n"
+        f"Type /anthem to make another or /create for any song.",
         parse_mode="Markdown"
     )
 
@@ -291,7 +469,6 @@ async def mood_chosen(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-    # Use official Audiera lyrics skill
     inspiration = f"{theme} — {style} style, {mood} mood"
     lyrics, err = generate_lyrics(inspiration)
 
@@ -299,7 +476,6 @@ async def mood_chosen(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await ctx.bot.send_message(uid, f"⚠️ Lyrics generation failed: {err}")
         return
 
-    # Generate scout and pitch via OpenRouter
     prompt = (
         f"You are Boom Master, an AI music A&R agent.\n\n"
         f"Theme: {theme}\nStyle: {style}\nMood: {mood}\n\n"
@@ -359,6 +535,12 @@ async def lyrics_decision(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def receive_edited_lyrics(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
+
+    # Anthem edit takes priority
+    if user_anthem_waiting.get(uid):
+        await receive_edited_anthem(update, ctx)
+        return
+
     if not user_waiting.get(uid):
         return
     user_waiting[uid] = False
@@ -395,7 +577,7 @@ async def send_to_audiera(uid, ctx):
 
     remaining = get_credits()
     credit_line = (
-        f"\n💳 Credits remaining: *{remaining}* ({(remaining // 2) * 2} songs left)"
+        f"\n💳 Credits remaining: *{remaining}*"
         if remaining is not None else ""
     )
 
@@ -405,9 +587,8 @@ async def send_to_audiera(uid, ctx):
         f"🎧 {song_url}\n\n"
         f"🏷️ *Style:* {style} · *Mood:* {mood} · *Artist:* {artist_name}\n\n"
         f"📋 *A&R Pitch*\n{pitch}\n\n"
-        f"💰 Earning $BEAT → `{WALLET}`"
         f"{credit_line}\n\n"
-        f"Type /create to make another song.",
+        f"Type /create to make another song or /anthem for your World Cup track.",
         parse_mode="Markdown"
     )
 
@@ -415,9 +596,11 @@ app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 app.add_handler(CommandHandler("start",   start))
 app.add_handler(CommandHandler("credits", credits_cmd))
 app.add_handler(CommandHandler("create",  create))
+app.add_handler(CommandHandler("anthem",  anthem))
 app.add_handler(CallbackQueryHandler(theme_chosen,    pattern="^theme:"))
 app.add_handler(CallbackQueryHandler(style_chosen,    pattern="^style:"))
 app.add_handler(CallbackQueryHandler(mood_chosen,     pattern="^mood:"))
 app.add_handler(CallbackQueryHandler(lyrics_decision, pattern="^lyrics:"))
+app.add_handler(CallbackQueryHandler(anthem_decision, pattern="^anthem:"))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_edited_lyrics))
 app.run_polling()
