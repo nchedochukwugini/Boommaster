@@ -290,6 +290,15 @@ def nimiq_address_from_public_key(public_key: bytes) -> str:
     return "NQ" + f"{checksum:02d}" + encoded
 
 
+def nimiq_signed_message_hash(message: str) -> bytes:
+    """Hash a message using Nimiq's signed-message domain prefix."""
+    # Nimiq signs this prefixed, length-delimited digest rather than the raw
+    # UTF-8 message. The challenge currently contains ASCII only, so its
+    # character count is also its UTF-8 byte count.
+    payload = b"\x16Nimiq Signed Message:\n" + str(len(message)).encode("ascii") + message.encode("utf-8")
+    return hashlib.sha256(payload).digest()
+
+
 def authenticated_user_id() -> str | None:
     token = request.cookies.get("boommaster_session", "")
     if not token or len(token) > 200:
@@ -629,7 +638,9 @@ def api_auth_verify():
         if len(public_key) != 32 or len(signature) != 64:
             raise ValueError("Unexpected signature length.")
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-        Ed25519PublicKey.from_public_bytes(public_key).verify(signature, challenge["message"].encode("utf-8"))
+        Ed25519PublicKey.from_public_bytes(public_key).verify(
+            signature, nimiq_signed_message_hash(challenge["message"])
+        )
         derived_address = nimiq_address_from_public_key(public_key)
     except Exception as exc:
         raise ApiError("Could not verify this wallet signature. Please try again.", 401) from exc
