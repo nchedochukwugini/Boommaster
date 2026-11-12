@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: boommaster-api
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: "gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: AUDIERA_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
