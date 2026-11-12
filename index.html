@@ -369,9 +369,9 @@
     <section id="screen1" class="screen active" aria-labelledby="title1">
       <h1 id="title1">Create your sound</h1>
       <p class="subtitle">AI Music A&amp;R Agent · Create a track from your story</p>
-      <div class="section-head"><h3>Choose a style</h3><span>Pick one</span></div>
+      <div class="section-head"><h3>Choose styles</h3><span id="styleSelectionHint">Pick up to 3</span></div>
       <div id="styles" class="choice-grid styles-grid"></div>
-      <div class="section-head"><h3>Choose a mood</h3><span>Pick one</span></div>
+      <div class="section-head"><h3>Choose moods</h3><span id="moodSelectionHint">Pick up to 3</span></div>
       <div id="moods" class="choice-grid moods-grid"></div>
       <div class="section-head"><h3>Your story or vibe</h3><span>Optional</span></div>
       <input id="vibe" class="text-field" type="text" maxlength="240" placeholder="Describe your story or vibe..." autocomplete="off">
@@ -381,12 +381,12 @@
 
     <section id="screen2" class="screen" aria-labelledby="title2">
       <h2 id="title2">Review your song</h2>
-      <p class="screen-copy">Your A&amp;R scout has shaped the concept. Edit the lyrics if you like.</p>
-      <div id="lyricsLoading" class="card hidden"><span class="spinner"></span>Writing your lyrics and scout report…</div>
+      <p class="screen-copy">Your A&amp;R scout has shaped the concept. Edit the suggested title and lyrics if you like.</p>
+      <div id="lyricsLoading" class="card hidden"><span class="spinner"></span>Writing your lyrics, title, and scout report…</div>
       <div id="lyricsReview" class="hidden">
         <article class="card scout-card"><p class="eyebrow">Scout report</p><p id="scoutText" class="scout-copy"></p></article>
-        <div class="section-head"><h3>Song title</h3><span>Shown in your workspace</span></div>
-        <input id="songTitle" class="text-field" type="text" maxlength="80" placeholder="Name your track" autocomplete="off">
+        <div class="section-head"><h3>Song title</h3><span>Suggested from your lyrics · edit anytime</span></div>
+        <input id="songTitle" class="text-field" type="text" maxlength="80" placeholder="Suggested song title" autocomplete="off">
         <label class="section-head" for="lyricsText"><h3>Lyrics</h3><span>Your edits are included with the song request</span></label>
         <textarea id="lyricsText" class="lyrics-box" maxlength="12000" aria-label="Edit generated lyrics"></textarea>
         <div class="button-row">
@@ -483,8 +483,8 @@
     const state = {
       sessionId: null,
       songTitle: '',
-      selectedStyle: null,
-      selectedMood: null,
+      selectedStyle: [],
+      selectedMood: [],
       vibe: '',
       lyrics: '',
       pitch: '',
@@ -548,6 +548,27 @@
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
+    function parseChoiceList(value) {
+      if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean).slice(0, 3);
+      return String(value || '').split(/\s*,\s*/).filter(Boolean).slice(0, 3);
+    }
+
+    function formatChoiceList(value) { return parseChoiceList(value).join(' · '); }
+
+    function syncChoiceSelection(key, value) {
+      state[key] = parseChoiceList(value);
+      const containerId = key === 'selectedStyle' ? 'styles' : 'moods';
+      const hintId = key === 'selectedStyle' ? 'styleSelectionHint' : 'moodSelectionHint';
+      const selected = new Set(state[key]);
+      $(containerId).querySelectorAll('.choice').forEach((button) => {
+        const on = selected.has(button.textContent);
+        button.classList.toggle('selected', on);
+        button.setAttribute('aria-pressed', String(on));
+      });
+      $(hintId).textContent = state[key].length ? `${state[key].length}/3 selected` : 'Pick up to 3';
+      $('generateLyricsButton').disabled = !(state.selectedStyle.length && state.selectedMood.length);
+    }
+
     function renderChoices(containerId, choices, key) {
       const container = $(containerId);
       container.replaceChildren();
@@ -556,15 +577,14 @@
         button.type = 'button';
         button.className = 'choice';
         button.textContent = choice;
-        button.setAttribute('aria-pressed', 'false');
+        button.setAttribute('aria-pressed', String(state[key].includes(choice)));
+        button.classList.toggle('selected', state[key].includes(choice));
         button.addEventListener('click', () => {
-          state[key] = choice;
-          container.querySelectorAll('.choice').forEach((item) => {
-            const selected = item === button;
-            item.classList.toggle('selected', selected);
-            item.setAttribute('aria-pressed', String(selected));
-          });
-          $('generateLyricsButton').disabled = !(state.selectedStyle && state.selectedMood);
+          const selected = new Set(state[key]);
+          if (selected.has(choice)) selected.delete(choice);
+          else if (selected.size < 3) selected.add(choice);
+          else return;
+          syncChoiceSelection(key, Array.from(selected));
         });
         container.append(button);
       });
@@ -719,7 +739,7 @@
             catch (error) { showPanelNotice('workspaceNotice', error.message || 'Could not save the song title.'); }
           });
           const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'remove'; remove.textContent = 'Remove';
-          remove.setAttribute('aria-label', `Remove ${item.style || 'saved'} ${item.mood || ''} creation from workspace`);
+          remove.setAttribute('aria-label', `Remove ${formatChoiceList(item.style) || 'saved'} ${formatChoiceList(item.mood)} creation from workspace`);
           remove.addEventListener('click', async () => {
             if (!window.confirm('Remove this creation from your BoomMaster workspace? This will not cancel a payment or delete the song from Audiera.')) return;
             remove.disabled = true; remove.textContent = 'Removing…';
@@ -738,7 +758,7 @@
         if (!data.playbooks?.length) { root.innerHTML = '<p class="empty-copy">No playbooks saved yet.</p>'; return; }
         data.playbooks.forEach((item) => {
           const card = document.createElement('article'); card.className = 'panel-item'; const h = document.createElement('h3'); h.textContent = item.name;
-          const desc = document.createElement('p'); desc.textContent = `${item.style} · ${item.mood}${item.vibe ? ` · ${item.vibe}` : ''}`; card.append(h, desc);
+          const desc = document.createElement('p'); desc.textContent = `${formatChoiceList(item.style)} · ${formatChoiceList(item.mood)}${item.vibe ? ` · ${item.vibe}` : ''}`; card.append(h, desc);
           const actions = document.createElement('div'); actions.className = 'panel-actions'; const use = document.createElement('button'); use.type = 'button'; use.textContent = 'Use'; use.addEventListener('click', () => applyPlaybook(item));
           const del = document.createElement('button'); del.type = 'button'; del.textContent = 'Delete'; del.addEventListener('click', async () => { try { await api(`/api/playbooks/${item.id}?userId=${encodeURIComponent(userId)}`, null, 'DELETE'); loadPlaybooks(); } catch (e) { showPanelNotice('playbookNotice', e.message); } });
           actions.append(use, del); card.append(actions); root.append(card);
@@ -801,18 +821,14 @@
     function showPanelNotice(id, message, kind = 'error') { const node = $(id); node.textContent = message; node.className = `notice ${kind} visible`; }
 
     function applyPlaybook(item) {
-      state.selectedStyle = item.style; state.selectedMood = item.mood; state.vibe = item.vibe || '';
-      $('styles').querySelectorAll('.choice').forEach((el) => { const on = el.textContent === item.style; el.classList.toggle('selected', on); el.setAttribute('aria-pressed', String(on)); });
-      $('moods').querySelectorAll('.choice').forEach((el) => { const on = el.textContent === item.mood; el.classList.toggle('selected', on); el.setAttribute('aria-pressed', String(on)); });
-      $('vibe').value = state.vibe; $('generateLyricsButton').disabled = false; activatePanel('create');
+      syncChoiceSelection('selectedStyle', item.style); syncChoiceSelection('selectedMood', item.mood); state.vibe = item.vibe || '';
+      $('vibe').value = state.vibe; activatePanel('create');
     }
 
     function resumeCreation(item) {
-      Object.assign(state, { sessionId:item.session_id, songTitle:item.song_title || '', selectedStyle:item.style, selectedMood:item.mood, vibe:item.vibe || '', lyrics:item.lyrics || '', scout:item.scout || '', pitch:item.pitch || '', taskId:item.task_id || null, artistName:item.artist_name || '', songUrl:item.song_url || '', songRequestStarted:!!item.task_id });
+      Object.assign(state, { sessionId:item.session_id, songTitle:item.song_title || '', selectedStyle:parseChoiceList(item.style), selectedMood:parseChoiceList(item.mood), vibe:item.vibe || '', lyrics:item.lyrics || '', scout:item.scout || '', pitch:item.pitch || '', taskId:item.task_id || null, artistName:item.artist_name || '', songUrl:item.song_url || '', songRequestStarted:!!item.task_id });
+      syncChoiceSelection('selectedStyle', state.selectedStyle); syncChoiceSelection('selectedMood', state.selectedMood);
       $('vibe').value = state.vibe;
-      $('styles').querySelectorAll('.choice').forEach((el) => { const on=el.textContent===state.selectedStyle; el.classList.toggle('selected',on); el.setAttribute('aria-pressed',String(on)); });
-      $('moods').querySelectorAll('.choice').forEach((el) => { const on=el.textContent===state.selectedMood; el.classList.toggle('selected',on); el.setAttribute('aria-pressed',String(on)); });
-      $('generateLyricsButton').disabled = !(state.selectedStyle && state.selectedMood);
       if (state.songUrl) renderResult();
       else if (state.taskId) { showScreen(4); pollSongStatus(); }
       else if (item.status === 'paid') { showScreen(4); startSongGeneration(); }
@@ -857,6 +873,7 @@
         });
         if (typeof data.lyrics !== 'string' || !data.lyrics.trim()) throw new Error('The lyrics service returned an empty result. Please try again.');
         state.lyrics = data.lyrics;
+        state.songTitle = data.songTitle || state.songTitle || '';
         state.scout = data.scout || 'Your concept is ready for production.';
         state.pitch = data.pitch || '';
         $('scoutText').textContent = state.scout;
@@ -1124,7 +1141,7 @@
       $('resultTitle').textContent = state.songTitle || 'Your track is live!';
       const badgeRoot = $('resultBadges');
       badgeRoot.replaceChildren();
-      [state.selectedStyle, state.selectedMood, state.artistName].filter(Boolean).forEach((label) => {
+      [...state.selectedStyle, ...state.selectedMood, state.artistName].filter(Boolean).forEach((label) => {
         const badge = document.createElement('span');
         badge.className = 'badge';
         badge.textContent = label;
@@ -1140,14 +1157,12 @@
       $('inlinePlayer').removeAttribute('src');
       $('inlinePlayer').load();
       Object.assign(state, {
-        sessionId: null, songTitle: '', selectedStyle: null, selectedMood: null, vibe: '', lyrics: '', pitch: '', scout: '',
+        sessionId: null, songTitle: '', selectedStyle: [], selectedMood: [], vibe: '', lyrics: '', pitch: '', scout: '',
         taskId: null, artistName: '', songUrl: '', pendingPayment: null, songRequestStarted: false,
         pollCount: 0, pollTimer: null,
       });
       $('vibe').value = '';
-      $('styles').querySelectorAll('.choice').forEach((el) => { el.classList.remove('selected'); el.setAttribute('aria-pressed', 'false'); });
-      $('moods').querySelectorAll('.choice').forEach((el) => { el.classList.remove('selected'); el.setAttribute('aria-pressed', 'false'); });
-      $('generateLyricsButton').disabled = true;
+      syncChoiceSelection('selectedStyle', []); syncChoiceSelection('selectedMood', []);
       $('lyricsText').value = '';
       $('songTitle').value = '';
       $('lyricsReview').classList.add('hidden');

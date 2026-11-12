@@ -364,15 +364,38 @@ def ask_openrouter(prompt: str) -> str:
     raise RuntimeError("All OpenRouter models failed.")
 
 
-def split_scout_pitch(text: str) -> tuple[str, str]:
-    scout = pitch = ""
-    if "## SCOUT" in text:
-        start = text.index("## SCOUT") + len("## SCOUT")
-        end = text.index("## PITCH") if "## PITCH" in text else len(text)
-        scout = text[start:end].strip()
-    if "## PITCH" in text:
-        pitch = text[text.index("## PITCH") + len("## PITCH"):].strip()
-    return scout, pitch
+def normalize_music_choices(value: Any, supported: Any, label: str) -> list[str]:
+    if isinstance(value, str):
+        choices = [part.strip() for part in value.split(",") if part.strip()]
+    elif isinstance(value, list) and all(isinstance(part, str) for part in value):
+        choices = [part.strip() for part in value if part.strip()]
+    else:
+        choices = []
+    choices = list(dict.fromkeys(choices))
+    if not 1 <= len(choices) <= 3 or any(choice not in supported for choice in choices):
+        raise ApiError(f"Choose one to three supported {label}s.")
+    return choices
+
+
+def split_song_brief(text: str) -> tuple[str, str, str]:
+    sections: dict[str, str] = {}
+    matches = list(re.finditer(r"(?im)^\s*##\s*(TITLE|SCOUT|PITCH)\s*$", text))
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        sections[match.group(1).upper()] = text[match.end():end].strip()
+    title = sections.get("TITLE", "").splitlines()[0].strip().strip("\"'`# ")[:80]
+    return title, sections.get("SCOUT", ""), sections.get("PITCH", "")
+
+
+def fallback_song_title(lyrics: str) -> str:
+    for line in lyrics.splitlines():
+        line = re.sub(r"^\s*\[[^]]+\]\s*", "", line).strip(" #\t-—")
+        if not line or re.match(r"(?i)^(verse|chorus|bridge|hook|intro|outro)\b", line):
+            continue
+        words = re.findall(r"[\w’'-]+", line, flags=re.UNICODE)[:6]
+        if words:
+            return " ".join(words).strip().title()[:80]
+    return "Untitled Track"
 
 
 def current_nim_usd() -> float:
@@ -881,34 +904,39 @@ def api_generate_lyrics():
     data = require_json()
     session_id = require_session(data.get("sessionId"))
     user_id = require_user_id()
-    style, mood = data.get("style"), data.get("mood")
+    styles = normalize_music_choices(data.get("style"), ARTISTS, "style")
+    moods = normalize_music_choices(data.get("mood"), MOODS, "mood")
+    style, mood = ", ".join(styles), ", ".join(moods)
     vibe = str(data.get("vibe", "")).strip()[:240]
-    if style not in ARTISTS or mood not in MOODS:
-        raise ApiError("Choose a supported style and mood.")
-    inspiration = f"{vibe or 'a story'} — {style} style, {mood} mood"
+    style_text, mood_text = " + ".join(styles), " + ".join(moods)
+    inspiration = f"{vibe or 'a story'} — {style_text} style, {mood_text} mood"
     lyrics = generate_lyrics_text(inspiration)
-    artist_name, _ = ARTISTS[style]
+    artist_name, _ = ARTISTS[styles[0]]
     prompt = (
         "You are Boom Master, an AI music A&R agent.\n\n"
-        f"Theme: {vibe or 'a story'}\nStyle: {style}\nMood: {mood}\n\n"
+        f"Theme: {vibe or 'a story'}\nStyles: {style_text}\nMoods: {mood_text}\n\n"
+        f"Lyrics:\n{lyrics[:7000]}\n\n"
         "Do the following:\n"
-        "1. SCOUT: 2 sentences on why this will emotionally connect with listeners.\n"
-        "2. PITCH: 3-sentence A&R pitch — hook, audience, why it gets plays.\n\n"
-        "Use exactly these headers:\n## SCOUT\n## PITCH"
+        "1. TITLE: a memorable, original song title of 2–6 words that fits these lyrics.\n"
+        "2. SCOUT: 2 sentences on why this will emotionally connect with listeners.\n"
+        "3. PITCH: 3-sentence A&R pitch — hook, audience, why it gets plays.\n\n"
+        "Use exactly these headers and no extra sections:\n## TITLE\n## SCOUT\n## PITCH"
     )
     try:
-        scout, pitch = split_scout_pitch(ask_openrouter(prompt))
+        song_title, scout, pitch = split_song_brief(ask_openrouter(prompt))
     except Exception:
-        scout, pitch = "", ""
+        song_title, scout, pitch = "", "", ""
+    song_title = song_title or fallback_song_title(lyrics)
     with db() as conn:
         conn.execute(
-            """INSERT INTO sessions(session_id,user_id,style,mood,vibe,lyrics,scout,pitch,created_at)
-               VALUES(?,?,?,?,?,?,?,?,?)
+            """INSERT INTO sessions(session_id,user_id,style,mood,vibe,lyrics,scout,pitch,song_title,created_at)
+               VALUES(?,?,?,?,?,?,?,?,?,?)
                ON CONFLICT(session_id) DO UPDATE SET user_id=excluded.user_id,style=excluded.style,mood=excluded.mood,
-               vibe=excluded.vibe,lyrics=excluded.lyrics,scout=excluded.scout,pitch=excluded.pitch,deleted_at=NULL""",
-            (session_id, user_id, style, mood, vibe, lyrics, scout, pitch, int(time.time())),
+               vibe=excluded.vibe,lyrics=excluded.lyrics,scout=excluded.scout,pitch=excluded.pitch,
+               song_title=excluded.song_title,deleted_at=NULL""",
+            (session_id, user_id, style, mood, vibe, lyrics, scout, pitch, song_title, int(time.time())),
         )
-    return jsonify({"lyrics": lyrics, "scout": scout, "pitch": pitch, "artistName": artist_name})
+    return jsonify({"lyrics": lyrics, "songTitle": song_title, "scout": scout, "pitch": pitch, "artistName": artist_name})
 
 
 @app.post("/api/verify-payment")
@@ -968,20 +996,22 @@ def api_generate_song():
             raise ApiError("A verified NIM or Polygon USDT payment is required.", 402)
         if session["task_id"]:
             return jsonify({"taskId": session["task_id"], "artistName": session["artist_name"]})
-        style, mood, vibe = session["style"], session["mood"], session["vibe"]
+        styles = normalize_music_choices(session["style"], ARTISTS, "style")
+        moods = normalize_music_choices(session["mood"], MOODS, "mood")
+        vibe = session["vibe"]
         lyrics = data.get("lyrics")
         lyrics = str(lyrics).strip() if isinstance(lyrics, str) else session["lyrics"]
         if not lyrics:
             raise ApiError("Lyrics are missing for this song.")
-        artist_name, artist_id = ARTISTS[style]
+        artist_name, artist_id = ARTISTS[styles[0]]
 
     try:
         response = requests.post(
             "https://ai.audiera.fi/api/skills/music",
             headers=audiera_headers(),
             json={
-                "styles": [style], "artistId": artist_id,
-                "inspiration": f"{vibe or 'a story'} — {mood} mood", "lyrics": lyrics,
+                "styles": styles, "artistId": artist_id,
+                "inspiration": f"{vibe or 'a story'} — {', '.join(moods)} mood", "lyrics": lyrics,
             }, timeout=35,
         )
         payload = response.json()
