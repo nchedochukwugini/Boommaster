@@ -1,76 +1,64 @@
-# Boom Master 🎙️
+# BoomMaster
 
-An AI A&R agent deployed as a Telegram bot for the Audiera Agent-Native Challenge.
+BoomMaster is an AI music creation mini app. Choose a musical direction, review and edit generated lyrics, pay for a track with NIM or USDT, then follow production until the finished song is ready to play or download.
 
-Try it live: @boommaster_agent_bot
+**Live app:** [boommaster.vercel.app](https://boommaster.vercel.app)  
+**Backend health:** [boommaster-api.onrender.com/api/health](https://boommaster-api.onrender.com/api/health)
 
-## What Boom Master Does
+## How it works
 
-Boom Master thinks like a music executive. It scouts emotional themes, commissions real songs using official Audiera skills, writes an A&R pitch, and earns $BEAT on BSC.
+1. Connect a Nimiq wallet and create a profile tied to that wallet.
+2. Select up to three styles and three moods, and describe the idea for the song.
+3. Review the generated lyrics, suggested title, and A&R feedback. Edit the title or lyrics as needed.
+4. Pay the displayed price using NIM or Polygon USDT. The backend verifies the transaction before starting production.
+5. Track the generation status and play or download the finished song. Saved creations and playbooks belong to the connected wallet.
 
-## Demo Song
-https://ai.audiera.fi/music/3440
+The app charges **0.50 USDT per track** or its live NIM equivalent. Profile photos are stored in the current browser.
 
-## Full Loop
-1. /create - AI suggests themes
-2. Pick a style (Hip-Hop, Soul, R&B, Pop...)
-3. Pick a mood (Heartbreak, Euphoric, Nostalgic...)
-4. Boom Master generates lyrics via Audiera Lyrics Skill
-5. You approve or edit the lyrics
-6. Song produced via Audiera Music Skill
-7. Live Audiera link delivered in Telegram
-8. $BEAT earned on BSC
+## Project layout
 
-## Stack
-- Agent framework: OpenClaw
-- Skills: Audiera Music Skill + Audiera Lyrics Skill
-- LLM: OpenRouter free tier for A&R intelligence
-- Interface: Telegram Bot (python-telegram-bot 22.7)
-- Chain: BSC
-- Wallet: 0x88c773d7c09d7889bd5e47dc588a390fa05989da
+- `index.html` — single-file mini app frontend, including its styles and JavaScript.
+- `app.py` — Flask API for wallet authentication, profiles, lyrics, payment verification, song generation, and saved work.
+- `bot.py` — separate Telegram bot entry point; it is not part of the deployed mini app flow.
+- `requirements.txt` — Python dependencies for the backend.
+- `render.yaml` — Render backend service configuration.
+- `vercel.json` — routes frontend `/api/*` requests to the Flask backend.
 
-## Skills Used
-- https://github.com/audiera/music-skill
-- https://github.com/audiera/lyrics-skill
+## Architecture
 
-## Setup
+The frontend is hosted on Vercel and is designed to open inside Nimiq Pay. It connects to the Nimiq Mini App SDK for NIM wallet access and transactions, and uses the browser's Polygon wallet provider for USDT payments. API requests pass through Vercel to the Flask service hosted on Render.
 
-Step 1 - Install Termux from F-Droid and run:
-pkg update && pkg upgrade -y
-pkg install proot-distro -y
-proot-distro install ubuntu
-proot-distro login ubuntu
+The backend stores account and creation data in Neon Postgres, uses OpenRouter for text generation, and connects to the Audiera music generation API for song production. Long-running song generation is tracked by polling the backend status endpoint, so the browser does not need to keep a single request open while a track is being made.
 
-Step 2 - Set up Ubuntu:
-apt update && apt upgrade -y
-apt install curl git python3 python3-pip -y
-curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-apt install -y nodejs
+## Run locally
 
-Step 3 - Install OpenClaw:
-npm install -g openclaw@latest
-openclaw onboard --install-daemon
+Use Python 3.11 or newer.
 
-Step 4 - Clone Audiera skills:
-mkdir -p ~/Projects/skills
-git clone https://github.com/audiera/music-skill.git ~/Projects/skills/music-skill
-git clone https://github.com/audiera/lyrics-skill.git ~/Projects/skills/lyrics-skill
+```sh
+python -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
+python app.py
+```
 
-Step 5 - Install bot dependencies:
-pip3 install python-telegram-bot==22.7 requests --break-system-packages
+The Flask app runs at `http://127.0.0.1:8765` by default. Configure the backend secrets and database connection in a local `.env` file before starting it. Required deployment variables include:
 
-Step 6 - Set environment variables:
-export TELEGRAM_BOT_TOKEN="your_telegram_bot_token"
-export AUDIERA_API_KEY="your_audiera_api_key"
-export OPENROUTER_API_KEY="your_openrouter_api_key"
+- `DATABASE_URL` — Neon Postgres connection string.
+- `AUDIERA_API_KEY` — music generation API key.
+- `OPENROUTER_API_KEY` — text generation API key.
 
-Step 7 - Start OpenClaw gateway (session 1):
-openclaw gateway
+Keep `.env` and secret values private; do not commit them to the repository.
 
-Step 8 - Run the bot (session 2):
-python3 bot.py
+To preview the frontend, serve the project directory with a local static HTTP server and open it in a browser. Wallet features require the appropriate wallet provider; the intended end-to-end payment experience runs inside Nimiq Pay.
 
-## Contest
-Built for the Audiera Agent-Native Challenge.
-Create -> Participate -> Earn
-#AudieraAI #BEAT #BinanceAI #Audiera #AgentEconomy #AIMusic
+## Deployment
+
+### Backend on Render
+
+The repository includes `render.yaml` for the Flask service. Create or update the Render service from this repository, provide the required environment variables in Render, and attach the Neon database using its `DATABASE_URL`. The configured health check is `/api/health`.
+
+### Frontend on Vercel
+
+Import the repository into Vercel and deploy the static frontend. `vercel.json` rewrites `/api/*` calls to the Render backend. Update that rewrite destination if the backend URL changes, then redeploy the frontend.
+
+After deployment, open the Vercel URL from **Nimiq Pay → Mini Apps** to use wallet connection and payment features.
